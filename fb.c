@@ -2273,12 +2273,27 @@ static VALUE fb_hash_from_ary(VALUE fields, VALUE row)
 	return hash;
 }
 
+static VALUE fb_symbols_hash_from_ary(VALUE fields, VALUE row)
+{
+	VALUE hash = rb_hash_new();
+	int i;
+	for (i = 0; i < RARRAY(fields)->len; i++) {
+		VALUE field = rb_ary_entry(fields, i);
+		VALUE name = rb_struct_aref(field, LONG2NUM(0));
+		VALUE v = rb_ary_entry(row, i);
+		rb_hash_aset(hash, ID2SYM(rb_intern(STR2CSTR(name))), v);
+	}
+	return hash;
+}
+
 static int hash_format(int argc, VALUE *argv)
 {
 	if (argc == 0 || argv[0] == ID2SYM(rb_intern("array"))) {
 		return 0;
 	} else if (argv[0] == ID2SYM(rb_intern("hash"))) {
 		return 1;
+	} else if (argv[0] == ID2SYM(rb_intern("symbols_hash"))) {
+		return 2;
 	} else {
 		rb_raise(rb_eFbError, "Unknown format");
 	}
@@ -2305,7 +2320,13 @@ static VALUE cursor_fetch(int argc, VALUE* argv, VALUE self)
 	fb_cursor_fetch_prep(fb_cursor);
 
 	ary = fb_cursor_fetch(fb_cursor);
-	return hash_row ? fb_hash_from_ary(fb_cursor->fields_ary, ary) : ary;
+    if (hash_row == 2) {
+        return fb_symbols_hash_from_ary(fb_cursor->fields_ary, ary);
+    } else if (hash_row == 1) {
+        return fb_hash_from_ary(fb_cursor->fields_ary, ary);
+    } else {
+        return ary;
+    }
 }
 
 /* call-seq:
@@ -2332,7 +2353,9 @@ static VALUE cursor_fetchall(int argc, VALUE* argv, VALUE self)
 	for (;;) {
 		row = fb_cursor_fetch(fb_cursor);
 		if (NIL_P(row)) break;
-		if (hash_rows) {
+		if (hash_rows == 2) {
+			rb_ary_push(ary, fb_symbols_hash_from_ary(fb_cursor->fields_ary, row));
+        } else if (hash_rows == 1) {
 			rb_ary_push(ary, fb_hash_from_ary(fb_cursor->fields_ary, row));
 		} else {
 			rb_ary_push(ary, row);
@@ -2365,7 +2388,9 @@ static VALUE cursor_each(int argc, VALUE* argv, VALUE self)
 	for (;;) {
 		row = fb_cursor_fetch(fb_cursor);
 		if (NIL_P(row)) break;
-		if (hash_rows) {
+		if (hash_rows == 2) {
+			rb_yield(fb_symbols_hash_from_ary(fb_cursor->fields_ary, row));
+        } else if (hash_rows == 1) {
 			rb_yield(fb_hash_from_ary(fb_cursor->fields_ary, row));
 		} else {
 			rb_yield(row);
