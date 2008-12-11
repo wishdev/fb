@@ -207,12 +207,13 @@ struct time_object {
 #define GetTimeval(obj, tobj) \
     Data_Get_Struct(obj, struct time_object, tobj)
 
-static VALUE fb_mktime(struct tm *tm)
+static VALUE fb_mktime(struct tm *tm, int milli)
 {
 	return rb_funcall(
-		rb_cTime, rb_intern("utc"), 6,
+		rb_cTime, rb_intern("utc"), 7,
 		INT2FIX(tm->tm_year), INT2FIX(tm->tm_mon), INT2FIX(tm->tm_mday),
-		INT2FIX(tm->tm_hour), INT2FIX(tm->tm_min), INT2FIX(tm->tm_sec));
+		INT2FIX(tm->tm_hour), INT2FIX(tm->tm_min), INT2FIX(tm->tm_sec),
+        INT2FIX(milli));
 }
 
 static VALUE fb_mkdate(struct tm *tm)
@@ -245,7 +246,7 @@ static void tm_from_date(struct tm *tm, VALUE date)
 	tm->tm_mday = FIX2INT(day);
 }
 
-static void tm_from_timestamp(struct tm *tm, VALUE obj)
+static void tm_from_timestamp(struct tm *tm, int *milli, VALUE obj)
 {
 	struct time_object *tobj;
 
@@ -256,7 +257,11 @@ static void tm_from_timestamp(struct tm *tm, VALUE obj)
 	}
 
 	GetTimeval(obj, tobj);
-	*tm = tobj->tm;
+    *milli = tobj->tv.tv_usec;
+    if (tobj->tm_got == 1)
+        *tm = tobj->tm;
+    else
+        localtime_r(&tobj->tv.tv_sec, tm);
 }
 
 static VALUE long_from_obj(VALUE obj)
@@ -1425,6 +1430,7 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
 	double dcheck;
 	VARY *vary;
 	XSQLVAR *var;
+    int milli;
 
 	isc_blob_handle blob_handle;
 	ISC_QUAD blob_id;
@@ -1589,16 +1595,19 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
 				case SQL_TIMESTAMP :
 					offset = FB_ALIGN(offset, alignment);
 					var->sqldata = (char *)(fb_cursor->i_buffer + offset);
-					tm_from_timestamp(&tms, obj);
+					tm_from_timestamp(&tms, &milli, obj);
 					isc_encode_timestamp(&tms, (ISC_TIMESTAMP *)var->sqldata);
-					offset += alignment;
+                    ((ISC_TIMESTAMP *)var->sqldata)->timestamp_time += milli / 100;
+                    offset += alignment;
 					break;
 
 				case SQL_TYPE_TIME :
 					offset = FB_ALIGN(offset, alignment);
 					var->sqldata = (char *)(fb_cursor->i_buffer + offset);
-					tm_from_timestamp(&tms, obj);
+					tm_from_timestamp(&tms, &milli, obj);
+
 					isc_encode_sql_time(&tms, (ISC_TIME *)var->sqldata);
+                    *((ISC_TIME *)var->sqldata) += milli / 100;
 					offset += alignment;
 					break;
 
@@ -1865,6 +1874,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
 	double dval;
 	long scnt;
 	struct tm tms;
+    int milli;
 
 	isc_blob_handle blob_handle;
 	ISC_QUAD blob_id;
@@ -1959,9 +1969,10 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
 #endif
 				case SQL_TIMESTAMP:
 					isc_decode_timestamp((ISC_TIMESTAMP *)var->sqldata, &tms);
+                    milli = (((ISC_TIMESTAMP *)var->sqldata)->timestamp_time % 10000) * 100;
 					t = mktime(&tms);
 					if (t < 0) t = 0;
-					val = rb_time_new(t, 0);
+					val = rb_time_new(t, milli);
 					break;
 
 				case SQL_TYPE_TIME:
@@ -1974,7 +1985,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
 					tms.tm_year = 2000;
 					tms.tm_mon = 1;
 					tms.tm_mday = 1;
-					val = fb_mktime(&tms);
+					val = fb_mktime(&tms, (*((ISC_TIME *)var->sqldata) % 10000) * 100);
 					break;
 
 				case SQL_TYPE_DATE:
