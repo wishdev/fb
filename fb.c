@@ -1939,7 +1939,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
 						dval = (double)*(short*)var->sqldata/ratio;
 						val = rb_float_new(dval);
 					} else {
-						val = INT2NUM((long)*(short*)var->sqldata);
+						val = INT2NUM(*(short*)var->sqldata);
 					}
 					break;
 
@@ -1951,7 +1951,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
 						dval = (double)*(long*)var->sqldata/ratio;
 						val = rb_float_new(dval);
 					} else {
-						val = INT2NUM(*(long*)var->sqldata);
+						val = INT2NUM(*(ISC_LONG*)var->sqldata);
 					}
 					break;
 
