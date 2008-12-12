@@ -1,6 +1,11 @@
  /*
   * fb.c
   * A module to access the Firebird database from Ruby.
+  * Another fork of fb.c by John W Higgins
+  * All changes, improvements and associated bugs Copyright (C) 2008 John W Higgins<john@wishVPS.com>
+  * License to all changes, improvements and bugs is granted under the same terms as the original and/or
+  * the Ruby license, whichever is most applicable.
+  * fb.c
   * Fork of interbase.c to fb.c by Brent Rowland.
   * All changes, improvements and associated bugs Copyright (C) 2006 Brent Rowland and Target Training International.
   * License to all changes, improvements and bugs is granted under the same terms as the original and/or
@@ -18,6 +23,27 @@
   * or implied warranty.  By use of this software the user agrees to
   * indemnify and hold harmless RIOS Corporation from any  claims or
   * liability for loss arising out of such use.
+  *
+  *
+  * Some concepts/code taken from KInterbasDB under the following license
+  *
+  * KInterbasDB Python Package
+  *
+  * Version 3.2
+  *
+  * The following contributors hold Copyright (C) over their respective
+  * portions of code (see KInterbasDB_license.txt for details):
+  *
+  * [Original Author (maintained through version 2.0-0.3.1):]
+  *   1998-2001 [alex]  Alexander Kuznetsov   <alexan@users.sourceforge.net>
+  * [Maintainers (after version 2.0-0.3.1):]
+  *   2001-2002 [maz]   Marek Isalski         <kinterbasdb@maz.nu>
+  *   2002-2006 [dsr]   David Rushby          <woodsplitter@rocketmail.com>
+  * [Contributors:]
+  *   2001      [eac]   Evgeny A. Cherkashin  <eugeneai@icc.ru>
+  *   2001-2002 [janez] Janez Jere            <janez.jere@void.si>
+  * KInterbasDB_license.txt has more details
+  *
   */
 
 #include "ruby.h"
@@ -43,6 +69,14 @@
 /* Execute process flag */
 #define EXECF_EXECDML   0
 #define EXECF_SETPARM   1
+
+#if (SIZEOF_VOIDP > 4 && defined(FB_API_VER) && FB_API_VER >= 20)
+  /* 64-bit platform with FB2.0+: */
+  #define NULL_FB_API_HANDLE 0
+#else
+    /*64-bit platform with FB 1.5, and all 32-bit platforms: */
+  #define NULL_FB_API_HANDLE NULL
+#endif
 
 static VALUE rb_mFb;
 static VALUE rb_cFbDatabase;
@@ -1568,7 +1602,7 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
                     var->sqldata = (char *)(fb_cursor->i_buffer + offset);
                     obj = rb_obj_as_string(obj);
 
-                    blob_handle = NULL;
+                    blob_handle = NULL_FB_API_HANDLE;
                     isc_create_blob2(
                         fb_connection->isc_status,&fb_connection->db,&fb_connection->transact,
                         &blob_handle,&blob_id,0,NULL);
@@ -1994,7 +2028,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
                     break;
 
                 case SQL_BLOB:
-                    blob_handle = NULL;
+                    blob_handle = NULL_FB_API_HANDLE;
                     blob_id = *(ISC_QUAD *)var->sqldata;
                     isc_open_blob2(fb_connection->isc_status, &fb_connection->db, &fb_connection->transact, &blob_handle, &blob_id, 0, NULL);
                     fb_error_check(fb_connection->isc_status);
@@ -2941,7 +2975,7 @@ static VALUE database_connect(VALUE self)
     ISC_STATUS isc_status[20];
     char *dbp;
     int length;
-    isc_db_handle handle = NULL;
+    isc_db_handle handle = NULL_FB_API_HANDLE;
     VALUE database = rb_iv_get(self, "@database");
 
     Check_Type(database, T_STRING);
