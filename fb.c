@@ -136,6 +136,7 @@ struct FbConnection {
 struct FbCursor {
     int open;
     int eof;
+    int soft_eof;
     isc_tr_handle auto_transact;
     isc_stmt_handle stmt;
     XSQLDA *i_sqlda;
@@ -147,6 +148,7 @@ struct FbCursor {
     VALUE fields_ary;
     VALUE fields_hash;
     VALUE connection;
+    long stmt_type;
 };
 
 typedef struct trans_opts
@@ -170,7 +172,7 @@ typedef struct trans_opts
 #define UPPER(c)    (((c) >= 'a' && (c)<= 'z') ? (c) - 'a' + 'A' : (c))
 #define FREE(p)     if (p)  { xfree(p); p = 0; }
 #define SETNULL(p)  if (p && strlen(p) == 0)    { p = 0; }
-/* #define HERE(s) printf("%s\n", s) */
+//#define HERE(s) printf("%s\n", s)
 #define HERE(s)
 
 static long calculate_buffsize(XSQLDA *sqlda)
@@ -1929,15 +1931,25 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
     Data_Get_Struct(fb_cursor->connection, struct FbConnection, fb_connection);
     fb_connection_check(fb_connection);
 
+    if (fb_cursor->soft_eof) {
+        fb_cursor->eof = Qtrue;
+        return Qnil;
+    }
+    
     if (fb_cursor->eof) {
         rb_raise(rb_eFbError, "Cursor is past end of data.");
     }
+
     /* Fetch one row */
     if (isc_dsql_fetch(fb_connection->isc_status, &fb_cursor->stmt, 1, fb_cursor->o_sqlda) == SQLCODE_NOMORE) {
         fb_cursor->eof = Qtrue;
         return Qnil;
     }
     fb_error_check(fb_connection->isc_status);
+
+    if (fb_cursor->stmt_type == isc_info_sql_stmt_exec_procedure) {
+        fb_cursor->soft_eof = Qtrue;
+    }
 
     /* Create the result tuple object */
     cols = fb_cursor->o_sqlda->sqld;
@@ -2130,7 +2142,6 @@ static VALUE cursor_execute2(VALUE args)
     struct FbCursor *fb_cursor;
     struct FbConnection *fb_connection;
     char *sql;
-    long statement;
     long length;
     long in_params;
     long cols;
@@ -2157,9 +2168,9 @@ static VALUE cursor_execute2(VALUE args)
 
     if (isc_info_buff[0] == isc_info_sql_stmt_type) {
         length = isc_vax_integer(&isc_info_buff[1], 2);
-        statement = isc_vax_integer(&isc_info_buff[3], (short)length);
+        fb_cursor->stmt_type = isc_vax_integer(&isc_info_buff[3], (short)length);
     } else {
-        statement = 0;
+        fb_cursor->stmt_type = 0;
     }
     /* Describe the parameters */
     isc_dsql_describe_bind(fb_connection->isc_status, &fb_cursor->stmt, 1, fb_cursor->i_sqlda);
@@ -2189,11 +2200,11 @@ static VALUE cursor_execute2(VALUE args)
 
     /* Execute the SQL statement if it is not query */
     if (!fb_cursor->o_sqlda->sqld) {
-        if (statement == isc_info_sql_stmt_start_trans) {
+        if (fb_cursor->stmt_type == isc_info_sql_stmt_start_trans) {
             rb_raise(rb_eFbError, "use Fb::Connection#transaction()");
-        } else if (statement == isc_info_sql_stmt_commit) {
+        } else if (fb_cursor->stmt_type == isc_info_sql_stmt_commit) {
             rb_raise(rb_eFbError, "use Fb::Connection#commit()");
-        } else if (statement == isc_info_sql_stmt_rollback) {
+        } else if (fb_cursor->stmt_type == isc_info_sql_stmt_rollback) {
             rb_raise(rb_eFbError, "use Fb::Connection#rollback()");
         } else if (in_params) {
             fb_cursor_execute_withparams(fb_cursor, RARRAY(args)->len, RARRAY(args)->ptr);
@@ -2201,7 +2212,7 @@ static VALUE cursor_execute2(VALUE args)
             isc_dsql_execute2(fb_connection->isc_status, &fb_connection->transact, &fb_cursor->stmt, SQLDA_VERSION1, NULL, NULL);
             fb_error_check(fb_connection->isc_status);
         }
-        rows_affected = cursor_rows_affected(fb_cursor, statement);
+        rows_affected = cursor_rows_affected(fb_cursor, fb_cursor->stmt_type);
         result = INT2NUM(rows_affected);
     } else {
         /* Open cursor if the SQL statement is query */
@@ -2743,6 +2754,33 @@ static VALUE connection_index_columns(VALUE self, VALUE index_name)
     return columns;
 }
 
+static VALUE connection_table_primary_key(VALUE self, VALUE table_name)
+{
+    char *sql_table_pk = "SELECT RDB$FIELD_NAME "
+                         "FROM RDB$INDEX_SEGMENTS NATURAL JOIN RDB$RELATION_CONSTRAINTS "
+                         "WHERE RDB$RELATION_NAME = ?";
+    VALUE query_table_pk = rb_str_new2(sql_table_pk);
+    VALUE query_parms[] = { query_table_pk, table_name };
+    VALUE result = connection_query(2, query_parms, self);
+    if (RARRAY(result)->len == 0) return Qnil;
+
+    VALUE table_pk = rb_ary_new();
+    int i;
+    struct FbConnection *fb_connection;
+    Data_Get_Struct(self, struct FbConnection, fb_connection);
+
+    for (i = 0; i < RARRAY(result)->len; i++) {
+        VALUE row = rb_ary_entry(result, i);
+        VALUE name = rb_ary_entry(row, 0);
+        rb_funcall(name, id_rstrip_bang, 0);
+        if (fb_connection->downcase_names && no_lowercase(name)) {
+            rb_funcall(name, id_downcase_bang, 0);
+        }
+        rb_ary_push(table_pk, name);
+    }
+    return table_pk;
+}
+
 /* call-seq:
  *   indexes() -> Hash
  *
@@ -3081,6 +3119,7 @@ void Init_fb()
     rb_define_method(rb_cFbConnection, "dialect", connection_dialect, 0);
     rb_define_method(rb_cFbConnection, "db_dialect", connection_db_dialect, 0);
     rb_define_method(rb_cFbConnection, "table_names", connection_table_names, 0);
+    rb_define_method(rb_cFbConnection, "table_primary_key", connection_table_primary_key, 1);
     rb_define_method(rb_cFbConnection, "generator_names", connection_generator_names, 0);
     rb_define_method(rb_cFbConnection, "view_names", connection_view_names, 0);
     rb_define_method(rb_cFbConnection, "role_names", connection_role_names, 0);
