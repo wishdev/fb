@@ -2596,6 +2596,16 @@ static char* CONNECTION_PARMS[] = {
     (char *)0
 };
 
+static VALUE connection_downcase_names(VALUE self, VALUE downcase_names)
+{
+    struct FbConnection *fb_connection;
+
+    Data_Get_Struct(self, struct FbConnection, fb_connection);
+
+    fb_connection->downcase_names = (downcase_names == Qtrue);
+    rb_iv_set(self, "@downcase_names", downcase_names);
+}
+
 static VALUE connection_create(isc_db_handle handle, VALUE db)
 {
     unsigned short dialect;
@@ -2758,7 +2768,7 @@ static VALUE connection_table_primary_key(VALUE self, VALUE table_name)
 {
     char *sql_table_pk = "SELECT RDB$FIELD_NAME "
                          "FROM RDB$INDEX_SEGMENTS NATURAL JOIN RDB$RELATION_CONSTRAINTS "
-                         "WHERE RDB$RELATION_NAME = ?";
+                         "WHERE RDB$CONSTRAINT_TYPE = 'PRIMARY KEY' AND RDB$RELATION_NAME = ?";
     VALUE query_table_pk = rb_str_new2(sql_table_pk);
     VALUE query_parms[] = { query_table_pk, table_name };
     VALUE result = connection_query(2, query_parms, self);
@@ -2933,6 +2943,7 @@ static VALUE database_initialize(int argc, VALUE *argv, VALUE self)
         rb_iv_set(self, "@charset", default_string(parms, "charset", "NONE"));
         rb_iv_set(self, "@role", rb_hash_aref(parms, ID2SYM(rb_intern("role"))));
         rb_iv_set(self, "@downcase_names", rb_hash_aref(parms, ID2SYM(rb_intern("downcase_names"))));
+        rb_iv_set(self, "@downcase_fields", rb_hash_aref(parms, ID2SYM(rb_intern("downcase_fields"))));
         rb_iv_set(self, "@page_size", default_int(parms, "page_size", 1024));
     }
     return self;
@@ -3106,6 +3117,7 @@ void Init_fb()
     rb_define_attr(rb_cFbConnection, "charset", 1, 1);
     rb_define_attr(rb_cFbConnection, "role", 1, 1);
     rb_define_attr(rb_cFbConnection, "downcase_names", 1, 1);
+    rb_define_method(rb_cFbConnection, "downcase_names=", connection_downcase_names, 1);
     rb_define_method(rb_cFbConnection, "to_s", connection_to_s, 0);
     rb_define_method(rb_cFbConnection, "execute", connection_execute, -1);
     rb_define_method(rb_cFbConnection, "query", connection_query, -1);

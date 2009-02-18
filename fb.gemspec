@@ -3,19 +3,19 @@ require 'rubygems'
 
 spec = Gem::Specification.new do |s|
   s.name = "fb"
-  s.version = "0.5.6"
-  s.date = "2008-04-22"
+  s.version = "0.5.6.1"
+  s.date = "2009-02-17"
   s.summary = "Firebird and Interbase driver"
   s.requirements = "Firebird client library fbclient.dll"
   s.require_path = '.'
-  s.email = "rowland@rowlandresearch.com"
-  s.homepage = "http://www.rowlandresearch.com/ruby/"
+  s.email = "wishdev@gmail.com"
+  s.homepage = "http://github.com/wishdev/fb/tree/master"
   s.rubyforge_project = "fblib"
   s.test_file = "test/FbTestSuite.rb"
   s.has_rdoc = true
   s.extra_rdoc_files = ['README']
   s.rdoc_options << '--title' << 'Fb -- Ruby Firebird Extension' << '--main' << 'README' << '-x' << 'test'
-  s.files = ['extconf.rb', 'fb.c', 'README'] + Dir.glob("test/*")
+  s.files = ['extconf.rb', 'fb.c', 'keywords.h', 'README'] + Dir.glob("test/*")
   s.platform = case PLATFORM
     when /win32/ then Gem::Platform::WIN32
   else
