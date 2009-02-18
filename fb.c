@@ -55,6 +55,8 @@
 #include <float.h>
 #include <time.h>
 
+#include "keywords.h"
+
 #define SQLDA_COLSINIT  50
 #define SQLCODE_NOMORE  100
 #define TPBBUFF_ALLOC   64
@@ -83,7 +85,7 @@ static VALUE rb_cFbDatabase;
 static VALUE rb_cFbConnection;
 static VALUE rb_cFbCursor;
 static VALUE rb_cFbSqlType;
-/* static VALUE rb_cFbGlobal; */
+static VALUE rb_cFbGlobal;
 static VALUE rb_eFbError;
 static VALUE rb_sFbField;
 static VALUE rb_sFbIndex;
@@ -172,6 +174,7 @@ typedef struct trans_opts
 #define UPPER(c)    (((c) >= 'a' && (c)<= 'z') ? (c) - 'a' + 'A' : (c))
 #define FREE(p)     if (p)  { xfree(p); p = 0; }
 #define SETNULL(p)  if (p && strlen(p) == 0)    { p = 0; }
+//#define HERE_NUM(i) printf("%i\n", i)
 //#define HERE(s) printf("%s\n", s)
 #define HERE(s)
 
@@ -2842,6 +2845,11 @@ static VALUE connection_indexes(VALUE self)
     return indexes;
 }
 
+static VALUE connection_rkeyword(VALUE self, VALUE word)
+{
+    return IsAToken(RSTRING(word)->ptr) ? Qtrue :Qfalse;
+}
+
 /* call-seq:
  *   from_code(code, subtype) -> String
  *
@@ -3151,8 +3159,9 @@ void Init_fb()
     rb_cFbSqlType = rb_define_class_under(rb_mFb, "SqlType", rb_cData);
     rb_define_singleton_method(rb_cFbSqlType, "from_code", sql_type_from_code, 2);
 
+    rb_cFbGlobal = rb_define_class_under(rb_mFb, "Global", rb_cData);
+    rb_define_singleton_method(rb_cFbGlobal, "reserved_keyword?", connection_rkeyword, 1);
 /*
-//  rb_cFbGlobal = rb_define_class_under(rb_mFb, "Global", rb_cData);
 //  rb_define_singleton_method(rb_cFbGlobal, "transaction", global_transaction, -1);
 //  rb_define_singleton_method(rb_cFbGlobal, "transaction_started", global_transaction_started, 0);
 //  rb_define_singleton_method(rb_cFbGlobal, "commit", global_commit, 0);
