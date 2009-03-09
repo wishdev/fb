@@ -44,6 +44,26 @@
   *   2001-2002 [janez] Janez Jere            <janez.jere@void.si>
   * KInterbasDB_license.txt has more details
   *
+  * isdst fix for daylight savings times taken from php interbase module
+  * under the followling license
+  *
+   +----------------------------------------------------------------------+
+   | PHP Version 5                                                        |
+   +----------------------------------------------------------------------+
+   | Copyright (c) 1997-2008 The PHP Group                                |
+   +----------------------------------------------------------------------+
+   | This source file is subject to version 3.01 of the PHP license,      |
+   | that is bundled with this package in the file LICENSE, and is        |
+   | available through the world-wide-web at the following url:           |
+   | http://www.php.net/license/3_01.txt                                  |
+   | If you did not receive a copy of the PHP license and are unable to   |
+   | obtain it through the world-wide-web, please send a note to          |
+   | license@php.net so we can mail you a copy immediately.               |
+   +----------------------------------------------------------------------+
+   | Authors: Jouni Ahto <jouni.ahto@exdec.fi>                            |
+   |          Andrew Avdeev <andy@rsc.mv.ru>                              |
+   |          Ard Biesheuvel <a.k.biesheuvel@ewi.tudelft.nl>              |
+   +----------------------------------------------------------------------+
   */
 
 #include "ruby.h"
@@ -2016,6 +2036,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
                 case SQL_TIMESTAMP:
                     isc_decode_timestamp((ISC_TIMESTAMP *)var->sqldata, &tms);
                     milli = (((ISC_TIMESTAMP *)var->sqldata)->timestamp_time % 10000) * 100;
+                    tms.tm_isdst = -1;
                     t = mktime(&tms);
                     if (t < 0) t = 0;
                     val = rb_time_new(t, milli);
