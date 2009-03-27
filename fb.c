@@ -67,7 +67,11 @@
   */
 
 #include "ruby.h"
-#include "re.h"
+#ifdef HAVE_RUBY_RE_H
+  # include <ruby/re.h>
+#else
+  # include <re.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
@@ -515,8 +519,8 @@ static void fb_connection_close_cursors(struct FbConnection *fb_connection)
 {
     int i;
 
-    for (i = 0; i < RARRAY(fb_connection->cursor)->len; i++) {
-        cursor_close(RARRAY(fb_connection->cursor)->ptr[i]);
+    for (i = 0; i < RARRAY_LEN(fb_connection->cursor); i++) {
+        cursor_close(RARRAY_PTR(fb_connection->cursor)[i]);
     }
 }
 
@@ -524,10 +528,10 @@ static void fb_connection_drop_cursors(struct FbConnection *fb_connection)
 {
     int i;
 
-    for (i = 0; i < RARRAY(fb_connection->cursor)->len; i++) {
-        cursor_drop(RARRAY(fb_connection->cursor)->ptr[i]);
+    for (i = 0; i < RARRAY_LEN(fb_connection->cursor); i++) {
+        cursor_drop(RARRAY_PTR(fb_connection->cursor)[i]);
     }
-    RARRAY(fb_connection->cursor)->len = 0;
+//    RARRAY_LEN(fb_connection->cursor) = 0;
 }
 
 /*
@@ -1522,12 +1526,12 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
                     offset = FB_ALIGN(offset, alignment);
                     var->sqldata = (char *)(fb_cursor->i_buffer + offset);
                     obj = rb_obj_as_string(obj);
-                    if (RSTRING(obj)->len > var->sqllen) {
-                        rb_raise(rb_eRangeError, "CHAR overflow: %d bytes exceeds %d byte(s) allowed.",
-                            RSTRING(obj)->len, var->sqllen);
+                    if (RSTRING_LEN(obj) > var->sqllen) {
+                        rb_raise(rb_eRangeError, "CHAR overflow: %ld bytes exceeds %d byte(s) allowed.",
+                            RSTRING_LEN(obj), var->sqllen);
                     }
-                    memcpy(var->sqldata, RSTRING(obj)->ptr, RSTRING(obj)->len);
-                    var->sqllen = RSTRING(obj)->len;
+                    memcpy(var->sqldata, RSTRING_PTR(obj), RSTRING_LEN(obj));
+                    var->sqllen = RSTRING_LEN(obj);
                     offset += var->sqllen + 1;
                     break;
 
@@ -1537,12 +1541,12 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
                     var->sqldata = (char *)(fb_cursor->i_buffer + offset);
                     vary = (VARY *)var->sqldata;
                     obj = rb_obj_as_string(obj);
-                    if (RSTRING(obj)->len > var->sqllen) {
-                        rb_raise(rb_eRangeError, "VARCHAR overflow: %d bytes exceeds %d byte(s) allowed.",
-                            RSTRING(obj)->len, var->sqllen);
+                    if (RSTRING_LEN(obj) > var->sqllen) {
+                        rb_raise(rb_eRangeError, "VARCHAR overflow: %ld bytes exceeds %d byte(s) allowed.",
+                            RSTRING_LEN(obj), var->sqllen);
                     }
-                    memcpy(vary->vary_string, RSTRING(obj)->ptr, RSTRING(obj)->len);
-                    vary->vary_length = RSTRING(obj)->len;
+                    memcpy(vary->vary_string, RSTRING_PTR(obj), RSTRING_LEN(obj));
+                    vary->vary_length = RSTRING_LEN(obj);
                     offset += vary->vary_length + sizeof(short);
                     break;
 
@@ -1629,8 +1633,8 @@ static void fb_cursor_set_inputparams(struct FbCursor *fb_cursor, int argc, VALU
                         fb_connection->isc_status,&fb_connection->db,&fb_connection->transact,
                         &blob_handle,&blob_id,0,NULL);
                     fb_error_check(fb_connection->isc_status);
-                    length = RSTRING(obj)->len;
-                    p = RSTRING(obj)->ptr;
+                    length = RSTRING_LEN(obj);
+                    p = RSTRING_PTR(obj);
                     while (length >= 4096) {
                         isc_put_segment(fb_connection->isc_status,&blob_handle,4096,p);
                         fb_error_check(fb_connection->isc_status);
@@ -1721,8 +1725,8 @@ static void fb_cursor_execute_withparams(struct FbCursor *fb_cursor, int argc, V
         int i;
         VALUE obj;
         VALUE ary = argv[0];
-        if (RARRAY(ary)->len > 0 && TYPE(RARRAY(ary)->ptr[0]) == T_ARRAY) {
-            for (i = 0; i < RARRAY(ary)->len; i++) {
+        if (RARRAY_LEN(ary) > 0 && TYPE(RARRAY_PTR(ary)[0]) == T_ARRAY) {
+            for (i = 0; i < RARRAY_LEN(ary); i++) {
                 obj = rb_ary_entry(ary, i);
                 fb_cursor_execute_withparams(fb_cursor, 1, &obj);
             }
@@ -1732,7 +1736,7 @@ static void fb_cursor_execute_withparams(struct FbCursor *fb_cursor, int argc, V
 
                 /* Set the input parameters */
                 Check_Type(obj, T_ARRAY);
-                fb_cursor_set_inputparams(fb_cursor, RARRAY(obj)->len, RARRAY(obj)->ptr);
+                fb_cursor_set_inputparams(fb_cursor, RARRAY_LEN(obj), RARRAY_PTR(obj));
 
                 /* Execute SQL statement */
                 isc_dsql_execute2(fb_connection->isc_status, &fb_connection->transact, &fb_cursor->stmt, SQLDA_VERSION1, fb_cursor->i_sqlda, NULL);
@@ -1861,7 +1865,7 @@ static VALUE fb_cursor_fields_hash(VALUE fields_ary)
     int i;
     VALUE hash = rb_hash_new();
 
-    for (i = 0; i < RARRAY(fields_ary)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(fields_ary); i++) {
         VALUE field = rb_ary_entry(fields_ary, i);
         VALUE name = rb_struct_aref(field, LONG2NUM(0));
         rb_hash_aset(hash, name, field);
@@ -2087,7 +2091,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
                         }
                     }
                     val = rb_tainted_str_new(NULL,total_length);
-                    for (p = RSTRING(val)->ptr; num_segments > 0; num_segments--, p += actual_seg_len) {
+                    for (p = RSTRING_PTR(val); num_segments > 0; num_segments--, p += actual_seg_len) {
                         isc_get_segment(fb_connection->isc_status, &blob_handle, &actual_seg_len, max_segment, p);
                         fb_error_check(fb_connection->isc_status);
                     }
@@ -2101,7 +2105,7 @@ static VALUE fb_cursor_fetch(struct FbCursor *fb_cursor)
                     break;
 
                 default:
-                    rb_raise(rb_eFbError, "Specified table includes unsupported datatype (%d)", dtp);
+                    rb_raise(rb_eFbError, "Specified table includes unsupported datatype (%ld)", dtp);
                     break;
             }
         }
@@ -2228,7 +2232,7 @@ static VALUE cursor_execute2(VALUE args)
         } else if (fb_cursor->stmt_type == isc_info_sql_stmt_rollback) {
             rb_raise(rb_eFbError, "use Fb::Connection#rollback()");
         } else if (in_params) {
-            fb_cursor_execute_withparams(fb_cursor, RARRAY(args)->len, RARRAY(args)->ptr);
+            fb_cursor_execute_withparams(fb_cursor, RARRAY_LEN(args), RARRAY_PTR(args));
         } else {
             isc_dsql_execute2(fb_connection->isc_status, &fb_connection->transact, &fb_cursor->stmt, SQLDA_VERSION1, NULL, NULL);
             fb_error_check(fb_connection->isc_status);
@@ -2248,7 +2252,7 @@ static VALUE cursor_execute2(VALUE args)
         }
 
         if (in_params) {
-            fb_cursor_set_inputparams(fb_cursor, RARRAY(args)->len, RARRAY(args)->ptr);
+            fb_cursor_set_inputparams(fb_cursor, RARRAY_LEN(args), RARRAY_PTR(args));
         }
 
         /* Open cursor */
@@ -2330,7 +2334,7 @@ static VALUE fb_hash_from_ary(VALUE fields, VALUE row)
 {
     VALUE hash = rb_hash_new();
     int i;
-    for (i = 0; i < RARRAY(fields)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(fields); i++) {
         VALUE field = rb_ary_entry(fields, i);
         VALUE name = rb_struct_aref(field, LONG2NUM(0));
         VALUE v = rb_ary_entry(row, i);
@@ -2343,7 +2347,7 @@ static VALUE fb_symbols_hash_from_ary(VALUE fields, VALUE row)
 {
     VALUE hash = rb_hash_new();
     int i;
-    for (i = 0; i < RARRAY(fields)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(fields); i++) {
         VALUE field = rb_ary_entry(fields, i);
         VALUE name = rb_struct_aref(field, LONG2NUM(0));
         VALUE v = rb_ary_entry(row, i);
@@ -2518,9 +2522,9 @@ static VALUE cursor_drop(VALUE self)
 
     /* reset the reference from connection */
     Data_Get_Struct(fb_cursor->connection, struct FbConnection, fb_connection);
-    for (i = 0; i < RARRAY(fb_connection->cursor)->len; i++) {
-        if (RARRAY(fb_connection->cursor)->ptr[i] == self) {
-            RARRAY(fb_connection->cursor)->ptr[i] = Qnil;
+    for (i = 0; i < RARRAY_LEN(fb_connection->cursor); i++) {
+        if (RARRAY_PTR(fb_connection->cursor)[i] == self) {
+            RARRAY_PTR(fb_connection->cursor)[i] = Qnil;
         }
     }
 
@@ -2625,6 +2629,8 @@ static VALUE connection_downcase_names(VALUE self, VALUE downcase_names)
 
     fb_connection->downcase_names = (downcase_names == Qtrue);
     rb_iv_set(self, "@downcase_names", downcase_names);
+
+    return Qnil;
 }
 
 static VALUE connection_create(isc_db_handle handle, VALUE db)
@@ -2773,7 +2779,7 @@ static VALUE connection_index_columns(VALUE self, VALUE index_name)
     struct FbConnection *fb_connection;
     Data_Get_Struct(self, struct FbConnection, fb_connection);
 
-    for (i = 0; i < RARRAY(result)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(result); i++) {
         VALUE row = rb_ary_entry(result, i);
         VALUE name = rb_ary_entry(row, 1);
         rb_funcall(name, id_rstrip_bang, 0);
@@ -2793,14 +2799,14 @@ static VALUE connection_table_primary_key(VALUE self, VALUE table_name)
     VALUE query_table_pk = rb_str_new2(sql_table_pk);
     VALUE query_parms[] = { query_table_pk, table_name };
     VALUE result = connection_query(2, query_parms, self);
-    if (RARRAY(result)->len == 0) return Qnil;
+    if (RARRAY_LEN(result) == 0) return Qnil;
 
     VALUE table_pk = rb_ary_new();
     int i;
     struct FbConnection *fb_connection;
     Data_Get_Struct(self, struct FbConnection, fb_connection);
 
-    for (i = 0; i < RARRAY(result)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(result); i++) {
         VALUE row = rb_ary_entry(result, i);
         VALUE name = rb_ary_entry(row, 0);
         rb_funcall(name, id_rstrip_bang, 0);
@@ -2830,7 +2836,7 @@ static VALUE connection_indexes(VALUE self)
     struct FbConnection *fb_connection;
     Data_Get_Struct(self, struct FbConnection, fb_connection);
 
-    for (i = 0; i < RARRAY(ary_indexes)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(ary_indexes); i++) {
         VALUE index_struct;
         VALUE row = rb_ary_entry(ary_indexes, i);
         VALUE table_name = rb_ary_entry(row, 0);
@@ -2914,10 +2920,10 @@ static VALUE hash_from_connection_string(VALUE cs)
     ID id_split = rb_intern("split");
     VALUE pairs = rb_funcall(cs, id_split, 1, re_SemiColon);
     int i;
-    for (i = 0; i < RARRAY(pairs)->len; i++) {
+    for (i = 0; i < RARRAY_LEN(pairs); i++) {
         VALUE pair = rb_ary_entry(pairs, i);
         VALUE keyValue = rb_funcall(pair, id_split, 1, re_Equal);
-        if (RARRAY(keyValue)->len == 2) {
+        if (RARRAY_LEN(keyValue) == 2) {
             VALUE key = rb_ary_entry(keyValue, 0);
             VALUE val = rb_ary_entry(keyValue, 1);
             rb_hash_aset(hash, rb_str_intern(key), val);
