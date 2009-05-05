@@ -25,6 +25,8 @@
  * MOD 29-Jun-2002
  */
 
+#include <strings.h>
+
 struct tok {
     const char* tok_string;
     int nonReserved;

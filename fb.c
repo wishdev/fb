@@ -2874,7 +2874,7 @@ static VALUE connection_indexes(VALUE self)
 
 static VALUE connection_rkeyword(VALUE self, VALUE word)
 {
-    return IsAToken(RSTRING(word)->ptr) ? Qtrue :Qfalse;
+    return IsAToken(RSTRING_PTR(word)) ? Qtrue :Qfalse;
 }
 
 /* call-seq:
